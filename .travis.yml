@@ -1,0 +1,20 @@
+language: python
+python:
+  - 3.4
+  - 3.5
+  - 3.6
+
+sudo: false
+
+cache:
+  - pip
+
+install:
+  - pip install --upgrade pip
+  - pip install -e .[test]
+
+script:
+  - flake8 .
+  - mypy --ignore-missing-imports brokkoly.py
+  - py.test tests.py --cov=brokkoly --cov-report term-missing
+  - rst2html.py README.rst --exit-status=2 > /dev/null
