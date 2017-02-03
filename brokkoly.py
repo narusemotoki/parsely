@@ -16,7 +16,7 @@ import falcon.request
 import falcon.response
 
 
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 
 
 Validation = List[Tuple[str, Any]]
@@ -32,7 +32,7 @@ class BrokkolyError(Exception):
 
 class Brokkoly:
     def __init__(self, name: str, broker: str) -> None:
-        self.celery = celery.Celery('tasks', broker=broker)
+        self.celery = celery.Celery(name, broker=broker)
         self._tasks = _tasks[name]
 
     def task(self, *preprocessors: Callable) -> Callable:
