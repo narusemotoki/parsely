@@ -21,6 +21,7 @@ __version__ = '0.0.1'
 
 Validation = List[Tuple[str, Any]]
 Processor = collections.namedtuple('Processor', ['func', 'validation'])
+Message = Dict[str, Any]
 
 _tasks = collections.defaultdict(dict)  # type: collections.defaultdict
 
@@ -56,10 +57,7 @@ class Brokkoly:
 def _prepare_validation(f: Callable) -> Validation:
     fullspec = inspect.getfullargspec(f)
 
-    args = {}
-    for arg_name in fullspec.args:
-        args[arg_name] = Any
-
+    args = {arg_name: Any for arg_name in fullspec.args}
     for arg_name, arg_type in fullspec.annotations.items():
         # returning type is doesn't matter. This is for input checking.
         if arg_name != 'return':
@@ -68,7 +66,7 @@ def _prepare_validation(f: Callable) -> Validation:
     return list(args.items())
 
 
-def _validate(message: Dict[str, Any], validation: Validation) -> Dict[str, Any]:
+def _validate(message: Message, validation: Validation) -> Message:
     validated = {}
     for arg_name, arg_type in validation:
         try:
@@ -87,6 +85,12 @@ def _validate(message: Dict[str, Any], validation: Validation) -> Dict[str, Any]
 
 
 class Producer:
+    def _recurse(self, message: Message, preprocessors: List[Processor]) -> Message:
+        if preprocessors:
+            (preprocess, preprocess_validation), *tail = preprocessors
+            return self._recurse(preprocess(**_validate(message, preprocess_validation)), tail)
+        return message
+
     def on_post(
             self, req: falcon.request.Request, resp: falcon.response.Response, queue_name: str,
             task_name: str
@@ -112,21 +116,21 @@ class Producer:
         try:
             message = json.loads(payload)['message']
         except ValueError:  # Python 3.4 doesn't have json.JSONDecodeError
-            raise falcon.HTTPBadRequest("Payload is not a JSON", "The payload must be JSON")
+            raise falcon.HTTPBadRequest("Payload is not a JSON", "The payload must be a JSON")
         except KeyError:
             raise falcon.HTTPBadRequest("Invalid JSON", "JSON must have message field")
 
-        for preprocess, preprocess_validation in preprocessors:
-            message = preprocess(**_validate(message, preprocess_validation))
-
         task.apply_async(
-            kwargs=_validate(message, validation), serializer='json', compression='zlib')
+            kwargs=_validate(self._recurse(message, preprocessors), validation),
+            serializer='json',
+            compression='zlib'
+        )
 
 
-def producer(path_prefix: Optional[str] = None) -> falcon.api.API:
+def producer(path: Optional[str]=None) -> falcon.api.API:
     application = falcon.API()
     defaule_route = "/{queue_name}/{task_name}"
-    route = '/{}{}'.format(path_prefix, defaule_route) if path_prefix else defaule_route
+    route = '/{}{}'.format(path, defaule_route) if path else defaule_route
     application.add_route(route, Producer())
 
     return application
