@@ -1,4 +1,6 @@
 import json
+import os
+import pkg_resources
 import unittest.mock
 
 import celery
@@ -39,6 +41,10 @@ class TestBrokkoly:
 
         with pytest.raises(brokkoly.BrokkolyError):
             self.brokkoly.task()(task_for_test)
+
+    def test_queue_name_startw_with__(self):
+        with pytest.raises(brokkoly.BrokkolyError):
+            brokkoly.Brokkoly('_queue', 'test_broker')
 
 
 class TestProducer:
@@ -142,6 +148,46 @@ class TestProducer:
             self.mock_req, self.mock_resp, 'test_queue', 'task_for_preprocessor_test')
 
         assert self.brokkoly._tasks['task_for_preprocessor_test'][0][0].apply_async.called
+
+    def test_on_get(self):
+        self.producer.on_get(self.mock_req, self.mock_resp, 'test_queue', 'task_for_test')
+        self.mock_resp.content_type = 'text/html'
+
+
+class TestStaticResource:
+    @unittest.mock.patch.object(pkg_resources, "WorkingSet")
+    def test_installed(self, mock_WorkingSet):
+        mock_info = unittest.mock.MagicMock(project_name='brokkoly', location='/path/to/lib')
+        mock_WorkingSet.return_value = [mock_info]
+
+        assert brokkoly.StaticResource().is_packaged
+
+    @unittest.mock.patch.object(pkg_resources, "WorkingSet")
+    def test_not_installed(self, mock_WorkingSet):
+        mock_WorkingSet.return_value = []
+        assert not brokkoly.StaticResource().is_packaged
+
+    @unittest.mock.patch.object(pkg_resources, "resource_filename")
+    def test_on_get_for_installed(self, mock_resource_filename):
+        resourcename = "brokkoly.js"
+        mock_resource_filename.return_value = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "brokkoly", "resources", resourcename
+        )
+
+        static_resource = brokkoly.StaticResource()
+        static_resource.is_packaged = True
+
+        mock_resp = unittest.mock.MagicMock()
+        static_resource.on_get(unittest.mock.MagicMock(), mock_resp, resourcename)
+        mock_resp.content_type = "application/javascript"
+
+    def test_on_get_for_not_installed(self):
+        static_resource = brokkoly.StaticResource()
+        static_resource.is_packaged = False
+
+        mock_resp = unittest.mock.MagicMock()
+        static_resource.on_get(unittest.mock.MagicMock(), mock_resp, "brokkoly.js")
+        mock_resp.content_type = "application/javascript"
 
 
 def test_producer():

@@ -15,6 +15,6 @@ install:
 
 script:
   - flake8 .
-  - mypy --ignore-missing-imports brokkoly.py
+  - mypy --ignore-missing-imports brokkoly
   - py.test tests.py --cov=brokkoly --cov-report term-missing
   - rst2html.py README.rst --exit-status=2 > /dev/null

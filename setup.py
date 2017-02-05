@@ -7,8 +7,17 @@ import sys
 
 here = os.path.abspath(os.path.dirname(__file__))
 
-with open(os.path.join(here, 'brokkoly.py')) as f:
-    version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE).group(1)
+
+# Python 3.4 doesn't have typing module. So I cannot give typehint here.
+def get_meta():
+    with open(os.path.join(here, 'brokkoly/__init__.py')) as f:
+        source = f.read()
+
+    regex = r'^{}\s*=\s*[\'"]([^\'"]*)[\'"]'
+    return lambda name: re.search(regex.format(name), source, re.MULTILINE).group(1)
+
+
+get_meta = get_meta()
 
 with open(os.path.join(here, 'README.rst')) as f:
     readme = f.read()
@@ -16,10 +25,11 @@ with open(os.path.join(here, 'README.rst')) as f:
 install_requires = [
     'celery',
     'falcon',
+    'jinja2',
 ]
 
 if sys.version_info < (3, 5):
-    install_requires.append('mypy')
+    install_requires.append('typing')
 
 test_requires = [
     'Pygments',
@@ -32,7 +42,7 @@ test_requires = [
 
 setuptools.setup(
     name='brokkoly',
-    version=version,
+    version=get_meta('__version__'),
     description="Brokkoly is a framework for enqueuing messages via HTTP request for celery.",
     long_description=readme,
     classifiers=[
@@ -47,13 +57,14 @@ setuptools.setup(
         "Topic :: Software Development :: Libraries"
     ],
     keywords=["celery", "queue"],
-    author="Motoki Naruse",
-    author_email="motoki@naru.se",
+    author=get_meta('__author__'),
+    author_email=get_meta('__email__'),
     url="https://github.com/narusemotoki/brokkoly",
-    license='MIT',
-    py_modules=['brokkoly'],
+    license=get_meta('__license__'),
+    packages=['brokkoly'],
     install_requires=install_requires,
     extras_require={
         'test': test_requires,
-    }
+    },
+    include_package_data=True,
 )
