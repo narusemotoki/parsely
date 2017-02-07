@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>Enqueue for {{queue_name}}/{{task_name}}</title>
+        <title>Enqueue for {{ queue_name }}/{{ task_name }} | Brokkoly</title>
         <meta charset="utf-8">
         <meta name="author" content="Motoki Naruse">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,10 +16,27 @@
     </head>
     <body>
         <div class="container">
-            <h1>Enqueue for {{queue_name}}/{{task_name}}</h1>
-            <div id="error" class="alert alert-danger" role="alert"></div>
-            <div id="editor"></div>
-            <button class="btn btn-primary" type="button" id="submit">Enqueue</button>
+            <h1>Enqueue for {{ queue_name }}/{{ task_name }}</h1>
+            <div class="row">
+                <div class="col-7">
+                    <div id="error" class="alert alert-danger" role="alert"></div>
+                    <div id="editor"></div>
+                    <button class="btn btn-primary" type="button" id="submit">Enqueue</button>
+                </div>
+                <div class="col-5">
+                    <h4>Past Messages</h4>
+                    <div class="list-group">
+                        {% for message in messages %}
+                        <div class="list-group-item list-group-item-action flex-column align-items-start">
+                            <div class="d-flex w-100 justify-content-between">
+                                {% highlight 'json' %}{{ message.message | pretty_print_json }}{% endhighlight %}
+                                <small class="text-muted">{{ message.created_at }}</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
         </div>
     </body>
 </html>

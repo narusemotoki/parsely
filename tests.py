@@ -1,6 +1,7 @@
 import json
 import os
 import pkg_resources
+import sqlite3
 import unittest.mock
 
 import celery
@@ -8,9 +9,11 @@ import falcon
 import pytest
 
 import brokkoly
+import brokkoly.database
 
 # We don't need actual celery for testing.
 celery.Celery = unittest.mock.MagicMock()
+brokkoly.database.db.dbname = 'test.db'
 
 
 def task_for_test(text: str, number: int):
@@ -54,9 +57,13 @@ class TestProducer:
         self.producer = brokkoly.Producer()
         self.mock_req = unittest.mock.MagicMock()
         self.mock_resp = unittest.mock.MagicMock()
+        brokkoly.database.Migrator(brokkoly.__version__).migrate()
+        brokkoly.database.db.reconnect()
 
     def teardown_method(self, method):
         brokkoly._tasks.clear()
+        brokkoly.database.db.get().close()
+        os.remove('test.db')
 
     def test_undefined_queue(self):
         with pytest.raises(falcon.HTTPBadRequest) as e:
@@ -155,18 +162,6 @@ class TestProducer:
 
 
 class TestStaticResource:
-    @unittest.mock.patch.object(pkg_resources, "WorkingSet")
-    def test_installed(self, mock_WorkingSet):
-        mock_info = unittest.mock.MagicMock(project_name='brokkoly', location='/path/to/lib')
-        mock_WorkingSet.return_value = [mock_info]
-
-        assert brokkoly.StaticResource().is_packaged
-
-    @unittest.mock.patch.object(pkg_resources, "WorkingSet")
-    def test_not_installed(self, mock_WorkingSet):
-        mock_WorkingSet.return_value = []
-        assert not brokkoly.StaticResource().is_packaged
-
     @unittest.mock.patch.object(pkg_resources, "resource_filename")
     def test_on_get_for_installed(self, mock_resource_filename):
         resourcename = "brokkoly.js"
@@ -188,6 +183,68 @@ class TestStaticResource:
         mock_resp = unittest.mock.MagicMock()
         static_resource.on_get(unittest.mock.MagicMock(), mock_resp, "brokkoly.js")
         mock_resp.content_type = "application/javascript"
+
+
+class TestMigrator:
+    def teardown_method(self, method):
+        brokkoly._tasks.clear()
+        brokkoly.database.db.get().close()
+        os.remove('test.db')
+
+    def test__raise_for_invalid_version(self):
+        brokkoly.database.Migrator(brokkoly.__version__).migrate()
+        with pytest.raises(brokkoly.BrokkolyError):
+            brokkoly.database.Migrator('0').migrate()
+
+    def test__run_migration_sql_file(self):
+        migrator = brokkoly.database.Migrator(brokkoly.__version__)
+        migrator._iter_diff = lambda x: [os.path.join("test_resources", "invalid.sql")]
+
+        with pytest.raises(brokkoly.BrokkolyError):
+            migrator.migrate()
+
+
+class TestDBManager:
+    def setup_method(self, method):
+        self.mock_connection_manager = unittest.mock.MagicMock()
+        self.db_manager = brokkoly.DBManager(self.mock_connection_manager)
+
+    def test_process_resource(self):
+        self.db_manager.process_resource(
+            unittest.mock.MagicMock(), unittest.mock.MagicMock(), unittest.mock.MagicMock(),
+            unittest.mock.MagicMock()
+        )
+        assert self.mock_connection_manager.reconnect.called
+
+    def test_process_response_without_connection(self):
+        self.mock_connection_manager.get = unittest.mock.MagicMock(return_value=None)
+        self.db_manager.process_response(
+            unittest.mock.MagicMock(), unittest.mock.MagicMock(), unittest.mock.MagicMock(), True
+        )
+
+        assert not self.mock_connection_manager.commit.called
+        assert not self.mock_connection_manager.rollback.called
+
+    def test_process_response_succeeded(self):
+        self.db_manager.process_response(
+            unittest.mock.MagicMock(), unittest.mock.MagicMock(), unittest.mock.MagicMock(), True
+        )
+        assert self.mock_connection_manager.get.return_value.commit.called
+        assert not self.mock_connection_manager.get.return_value.rollback.called
+
+    def test_process_response_failed(self):
+        self.db_manager.process_response(
+            unittest.mock.MagicMock(), unittest.mock.MagicMock(), unittest.mock.MagicMock(), False
+        )
+        assert not self.mock_connection_manager.get.return_value.commit.called
+        assert self.mock_connection_manager.get.return_value.rollback.called
+
+    def test_process_response_failed_with_closed_connection(self):
+        self.mock_connection_manager.get.return_value.rollback = unittest.mock.MagicMock(
+            side_effect=sqlite3.ProgrammingError)
+        self.db_manager.process_response(
+            unittest.mock.MagicMock(), unittest.mock.MagicMock(), unittest.mock.MagicMock(), False
+        )
 
 
 def test_producer():

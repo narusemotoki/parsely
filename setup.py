@@ -26,6 +26,7 @@ install_requires = [
     'celery',
     'falcon',
     'jinja2',
+    'jinja2-highlight',
 ]
 
 if sys.version_info < (3, 5):
