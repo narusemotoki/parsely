@@ -7,6 +7,8 @@ Brokkoly
 
 Brokkoly is a framework for enqueuing messages via HTTP request for celery.
 
+`CHANGELOG <https://github.com/narusemotoki/brokkoly/blob/master/CHANGELOG.rst>`_
+
 Example
 =======
 

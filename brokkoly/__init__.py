@@ -1,8 +1,9 @@
 import collections
 import inspect
 import json
+import logging
 import os
-import pkg_resources
+import sqlite3
 from typing import (
     Any,
     Callable,
@@ -18,6 +19,9 @@ import falcon.request
 import falcon.response
 import jinja2
 
+import brokkoly.database
+import brokkoly.resource
+
 
 __all__ = ['BrokkolyError', 'Brokkoly', 'producer']
 __author__ = "Motoki Naruse"
@@ -26,7 +30,7 @@ __credits__ = ["Motoki Naruse"]
 __email__ = "motoki@naru.se"
 __license__ = "MIT"
 __maintainer__ = "Motoki Naruse"
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 Validation = List[Tuple[str, Any]]
@@ -34,6 +38,9 @@ Processor = collections.namedtuple('Processor', ['func', 'validation'])
 Message = Dict[str, Any]
 
 _tasks = collections.defaultdict(dict)  # type: collections.defaultdict
+
+
+logger = logging.getLogger(__name__)
 
 
 class BrokkolyError(Exception):
@@ -102,7 +109,11 @@ class Producer:
         self._jinja2 = jinja2.Environment(loader=jinja2.ChoiceLoader([
             jinja2.PackageLoader(__name__, 'resources'),
             jinja2.FileSystemLoader('resources'),
-        ]))
+        ]), extensions=[
+            'jinja2_highlight.HighlightExtension'
+        ])
+        self._jinja2.filters['pretty_print_json'] = lambda source: json.dumps(
+            json.loads(source), indent=4, sort_keys=True)
 
     def _render(self, template: str, **kwargs) -> str:
         return self._jinja2.get_template(template).render(**kwargs)
@@ -150,6 +161,8 @@ class Producer:
             serializer='json',
             compression='zlib'
         )
+        brokkoly.database.MessageLog.create(queue_name, task_name, json.dumps(message))
+        brokkoly.database.MessageLog.eliminate(queue_name, task_name)
         resp.status = falcon.HTTP_202
         resp.body = "{}"
 
@@ -158,30 +171,17 @@ class Producer:
             task_name: str
     ) -> None:
         self._validate_queue_and_task(queue_name, task_name)
+        messages = brokkoly.database.MessageLog.list_by_queue_name_and_task_name(
+            queue_name, task_name)
 
         resp.content_type = 'text/html'
-        resp.body = self._render("enqueue.html", queue_name=queue_name, task_name=task_name)
+        resp.body = self._render(
+            "enqueue.html", queue_name=queue_name, task_name=task_name, messages=messages)
 
 
 class StaticResource:
-    def __init__(self) -> None:
-        self._packagepath = os.path.dirname(os.path.abspath(__file__))
-        self._distributionpath = os.path.dirname(self._packagepath)
-
-        for info in pkg_resources.WorkingSet():  # type: ignore
-            if info.project_name == __name__ and info.location != self._distributionpath:
-                self.is_packaged = True
-                break
-        else:
-            self.is_packaged = False
-
-    def _resource_filename(self, filename: str) -> str:
-        if self.is_packaged:
-            return pkg_resources.resource_filename(__name__, "resources/{}".format(filename))
-        return os.path.join(self._packagepath, 'resources', filename)
-
     def _read_resource(self, filename: str) -> bytes:
-        with open(self._resource_filename(filename), 'rb') as f:
+        with open(brokkoly.resource.resource_filename(filename), 'rb') as f:
             return f.read()
 
     def on_get(
@@ -195,8 +195,56 @@ class StaticResource:
         resp.body = self._read_resource(filename)
 
 
-def producer(path: Optional[str]=None) -> falcon.api.API:
-    application = falcon.API()
+class DBManager:
+    def __init__(
+            self, connection_manager: brokkoly.database.ThreadLocalDBConnectionManager) -> None:
+        self.connection_manager = connection_manager
+
+    def process_resource(
+            self, req: falcon.request.Request, resp: falcon.response.Response, resource, params
+    ) -> None:
+        self.connection_manager.reconnect()
+
+    def process_response(
+            self, req: falcon.request.Request, resp: falcon.response.Response, resource,
+            req_succeeded: bool
+    ) -> None:
+        connection = self.connection_manager.get()
+        if not connection:
+            # make connection only requested URL is matched any route.
+            return
+
+        if req_succeeded:
+            connection.commit()
+            connection.close()
+            return
+
+        # I think no way to know the connection is alive or not. When the thread is reused, and
+        # it was passed process_resource method, connection is not None and comes here.
+        try:
+            connection.rollback()
+            connection.close()
+        except sqlite3.ProgrammingError:
+            # With above reason, I think we don't need to report this one as exception.
+            logger.debug("Failed to rollback or close SQLite3 connection.")
+
+
+def init_logger(log_level: int) -> None:
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)-5.5s [%(name)s:%(lineno)s] %(message)s"
+    )
+
+
+def producer(*, path: Optional[str]=None, log_level=logging.ERROR) -> falcon.api.API:
+    init_logger(log_level)
+    brokkoly.database.db.dbname = "brokkoly.db"
+
+    brokkoly.database.Migrator(__version__).migrate()
+
+    application = falcon.API(middleware=[
+        DBManager(brokkoly.database.db),
+    ])
     for controller, route in [
             (StaticResource(), "/__static__/{filename}"),
             (Producer(), "/{queue_name}/{task_name}"),
