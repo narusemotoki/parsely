@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Task list for {{ queue_name }} | Brokkoly{% endblock %}
+{% block content %}
+<h1>Task list for {{ queue_name }}</h1>
+<div class="row">
+    <div class="col-12">
+        <ul class="list-group">
+            {% for task_name in task_names %}
+            <li class="list-group-item"><a href="{{ task_name }}">{{ task_name }}</a></li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

@@ -54,7 +54,7 @@ class TestProducer:
     def setup_method(self, method):
         self.brokkoly = brokkoly.Brokkoly('test_queue', 'test_broker')
         self.brokkoly.task()(task_for_test)
-        self.producer = brokkoly.Producer()
+        self.producer = brokkoly.Producer(brokkoly.HTMLRendler())
         self.mock_req = unittest.mock.MagicMock()
         self.mock_resp = unittest.mock.MagicMock()
         brokkoly.database.Migrator(brokkoly.__version__).migrate()
@@ -245,6 +245,35 @@ class TestDBManager:
         self.db_manager.process_response(
             unittest.mock.MagicMock(), unittest.mock.MagicMock(), unittest.mock.MagicMock(), False
         )
+
+
+class TestListTaskResource:
+    def setup_method(self, method):
+        self.resource = brokkoly.TaskListResource(brokkoly.HTMLRendler())
+
+    def teardown_method(self, method):
+        brokkoly._tasks.clear()
+
+    def test_on_get(self):
+        queue_name = 'test_queue'
+        brokkoly.Brokkoly(queue_name, 'test_broker')
+        mock_resp = unittest.mock.MagicMock()
+        self.resource.on_get(unittest.mock.MagicMock(), mock_resp, queue_name)
+
+        assert mock_resp.content_type == 'text/html'
+
+    def test_on_get_unknown_queue(self):
+        mock_resp = unittest.mock.MagicMock()
+        with pytest.raises(falcon.HTTPNotFound):
+            self.resource.on_get(unittest.mock.MagicMock(), mock_resp, "unknow_queue")
+
+    def test__list_task_name(self):
+        queue_name = 'test_queue'
+        b = brokkoly.Brokkoly(queue_name, 'test_broker')
+        assert len(list(self.resource._list_task_name(queue_name))) == 0
+
+        b.task()(task_for_test)
+        assert len(list(self.resource._list_task_name(queue_name))) == 1
 
 
 def test_producer():
