@@ -8,6 +8,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterable,
     List,
     Optional,
     Tuple,
@@ -104,7 +105,7 @@ def _validate(message: Message, validation: Validation) -> Message:
     return validated
 
 
-class Producer:
+class HTMLRendler:
     def __init__(self) -> None:
         self._jinja2 = jinja2.Environment(loader=jinja2.ChoiceLoader([
             jinja2.PackageLoader(__name__, 'resources'),
@@ -115,8 +116,13 @@ class Producer:
         self._jinja2.filters['pretty_print_json'] = lambda source: json.dumps(
             json.loads(source), indent=4, sort_keys=True)
 
-    def _render(self, template: str, **kwargs) -> str:
+    def render(self, template: str, **kwargs) -> str:
         return self._jinja2.get_template(template).render(**kwargs)
+
+
+class Producer:
+    def __init__(self, rendler: HTMLRendler) -> None:
+        self._rendler = rendler
 
     def _recurse(self, message: Message, preprocessors: List[Processor]) -> Message:
         if preprocessors:
@@ -175,8 +181,34 @@ class Producer:
             queue_name, task_name)
 
         resp.content_type = 'text/html'
-        resp.body = self._render(
+        resp.body = self._rendler.render(
             "enqueue.html", queue_name=queue_name, task_name=task_name, messages=messages)
+
+
+class TaskListResource:
+    def __init__(self, rendler: HTMLRendler) -> None:
+        self._rendler = rendler
+
+    def on_get(
+            self, req: falcon.request.Request, resp: falcon.response.Response, queue_name: str
+    ) -> None:
+        try:
+            task_names = self._list_task_name(queue_name)
+        except KeyError:
+            raise falcon.HTTPNotFound(
+                title="Undefined queue",
+                description="{} is undefined queue".format(queue_name)
+            )
+
+        resp.content_type = 'text/html'
+        resp.body = self._rendler.render(
+            "task_list.html", queue_name=queue_name, task_names=task_names)
+
+    def _list_task_name(self, queue_name: str) -> Iterable[str]:
+        # Check with "in" because _tasks is defaultdict.
+        if queue_name in _tasks:
+            return _tasks[queue_name].keys()
+        raise KeyError
 
 
 class StaticResource:
@@ -245,9 +277,11 @@ def producer(*, path: Optional[str]=None, log_level=logging.ERROR) -> falcon.api
     application = falcon.API(middleware=[
         DBManager(brokkoly.database.db),
     ])
+    rendler = HTMLRendler()
     for controller, route in [
             (StaticResource(), "/__static__/{filename}"),
-            (Producer(), "/{queue_name}/{task_name}"),
+            (Producer(rendler), "/{queue_name}/{task_name}"),
+            (TaskListResource(rendler), "/{queue_name}"),
     ]:
         application.add_route("/{}{}".format(path, route) if path else route, controller)
 
