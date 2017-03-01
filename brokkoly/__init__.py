@@ -211,6 +211,18 @@ class TaskListResource:
         raise KeyError
 
 
+class QueueListResource:
+    def __init__(self, rendler: HTMLRendler) -> None:
+        self._rendler = rendler
+
+    def on_get(self, req: falcon.request.Request, resp: falcon.response.Response) -> None:
+        resp.content_type = 'text/html'
+        resp.body = self._rendler.render("queue_list.html", queue_names=self._list_queue_name())
+
+    def _list_queue_name(self) -> List[str]:
+        return sorted(_tasks.keys())
+
+
 class StaticResource:
     def _read_resource(self, filename: str) -> bytes:
         with open(brokkoly.resource.resource_filename(filename), 'rb') as f:
@@ -274,13 +286,12 @@ def producer(*, path: Optional[str]=None, log_level=logging.ERROR) -> falcon.api
 
     brokkoly.database.Migrator(__version__).migrate()
 
-    application = falcon.API(middleware=[
-        DBManager(brokkoly.database.db),
-    ])
+    application = falcon.API(middleware=[DBManager(brokkoly.database.db)])
     rendler = HTMLRendler()
     for controller, route in [
             (StaticResource(), "/__static__/{filename}"),
             (Producer(rendler), "/{queue_name}/{task_name}"),
+            (QueueListResource(rendler), "/"),
             (TaskListResource(rendler), "/{queue_name}"),
     ]:
         application.add_route("/{}{}".format(path, route) if path else route, controller)

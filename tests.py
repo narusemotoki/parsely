@@ -276,5 +276,22 @@ class TestListTaskResource:
         assert len(list(self.resource._list_task_name(queue_name))) == 1
 
 
+class TestQueueListResource:
+    def setup_method(self, method):
+        self.rendler = unittest.mock.MagicMock()
+        self.resource = brokkoly.QueueListResource(self.rendler)
+
+    def teardown_method(self, method):
+        brokkoly._tasks.clear()
+
+    def test_on_get(self):
+        queue_names = ["first_quque", "second_queue"]
+        for queue_name in queue_names:
+            brokkoly.Brokkoly(queue_name, 'test_broker')
+
+        self.resource.on_get(unittest.mock.MagicMock(), unittest.mock.MagicMock())
+        self.rendler.render.assert_called_once_with("queue_list.html", queue_names=queue_names)
+
+
 def test_producer():
     assert isinstance(brokkoly.producer(), falcon.api.API)
