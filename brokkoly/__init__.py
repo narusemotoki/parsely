@@ -143,29 +143,35 @@ class Producer:
         except KeyError:
             raise falcon.HTTPBadRequest("Undefined task", "{} is undefined task".format(task_name))
 
-    def on_post(
-            self, req: falcon.request.Request, resp: falcon.response.Response, queue_name: str,
-            task_name: str
-    ) -> None:
-        (task, validation), preprocessors = self._validate_queue_and_task(queue_name, task_name)
+    def _validate_payload(self, req: falcon.request.Request) -> Dict[str, Any]:
         payload = req.stream.read().decode()
         if not payload:
             raise falcon.HTTPBadRequest(
                 "Empty payload",
                 "Even your task doesn't need any arguments, payload must have message filed"
             )
-
         try:
-            message = json.loads(payload)['message']
+            return json.loads(payload)
         except ValueError:  # Python 3.4 doesn't have json.JSONDecodeError
             raise falcon.HTTPBadRequest("Payload is not a JSON", "The payload must be a JSON")
+
+    def on_post(
+            self, req: falcon.request.Request, resp: falcon.response.Response, queue_name: str,
+            task_name: str
+    ) -> None:
+        (task, validation), preprocessors = self._validate_queue_and_task(queue_name, task_name)
+        payload = self._validate_payload(req)
+
+        try:
+            message = payload['message']
         except KeyError:
             raise falcon.HTTPBadRequest("Invalid JSON", "JSON must have message field")
 
         task.apply_async(
             kwargs=_validate(self._recurse(message, preprocessors), validation),
             serializer='json',
-            compression='zlib'
+            compression='zlib',
+            countdown=payload.get('delay', 0)
         )
         brokkoly.database.MessageLog.create(queue_name, task_name, json.dumps(message))
         brokkoly.database.MessageLog.eliminate(queue_name, task_name)
