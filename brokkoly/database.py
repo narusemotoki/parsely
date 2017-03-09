@@ -4,7 +4,8 @@ import logging
 import os
 import sqlite3
 import threading
-from typing import (
+from typing import (  # NOQA
+    Dict,
     Iterator,
     Optional,
 )

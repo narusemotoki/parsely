@@ -31,7 +31,7 @@ __credits__ = ["Motoki Naruse"]
 __email__ = "motoki@naru.se"
 __license__ = "MIT"
 __maintainer__ = "Motoki Naruse"
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 Validation = List[Tuple[str, Any]]

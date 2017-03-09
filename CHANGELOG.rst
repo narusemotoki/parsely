@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.3.0 (2017/03/09)
+------------------
 
 * [Feature] Task list on the web interface.
 * [Feature] Queue list on the web interface.
