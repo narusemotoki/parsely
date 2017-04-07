@@ -10,6 +10,7 @@ import pytest
 
 import brokkoly
 import brokkoly.database
+import brokkoly.retry
 
 # We don't need actual celery for testing.
 celery.Celery = unittest.mock.MagicMock()
@@ -48,6 +49,36 @@ class TestBrokkoly:
     def test_queue_name_startw_with__(self):
         with pytest.raises(brokkoly.BrokkolyError):
             brokkoly.Brokkoly('_queue', 'test_broker')
+
+    def test_retry(self):
+        def task_for_retry():
+            raise Exception
+
+        with unittest.mock.patch.object(self.brokkoly, 'celery') as mock_celery:
+            def mock_task(handle, bind):
+                self.handle = handle
+
+            mock_celery.task.side_effect = mock_task
+            self.brokkoly.task(retry_policy=brokkoly.retry.FibonacciWait(1))(task_for_retry)
+            mock_celery_task = unittest.mock.MagicMock()
+            self.handle(mock_celery_task)
+            assert mock_celery_task.retry.called
+
+    def test_no_retry(self):
+        def task_for_retry():
+            raise Exception
+
+        with unittest.mock.patch.object(self.brokkoly, 'celery') as mock_celery:
+            def mock_task(handle, bind):
+                self.handle = handle
+
+            mock_celery.task.side_effect = mock_task
+            self.brokkoly.task()(task_for_retry)
+            mock_celery_task = unittest.mock.MagicMock()
+
+            with pytest.raises(Exception):
+                self.handle(mock_celery_task)
+            assert not mock_celery_task.retry.called
 
 
 class TestProducer:
@@ -295,3 +326,13 @@ class TestQueueListResource:
 
 def test_producer():
     assert isinstance(brokkoly.producer(), falcon.api.API)
+
+
+def test_fibonacci_wait():
+    retry_count = 10
+    fibonacci_wait = brokkoly.retry.FibonacciWait(retry_count)
+    assert fibonacci_wait.max_retries == retry_count
+    assert fibonacci_wait.retry_method == brokkoly.retry.RetryMethod.countdown
+
+    for i, expect in enumerate([1, 2, 3, 5, 8, 13, 21, 34, 55, 89]):
+        assert fibonacci_wait.countdown(i, None) == expect

@@ -20,6 +20,7 @@ import falcon.request
 import falcon.response
 import jinja2
 
+import brokkoly.retry
 import brokkoly.database
 import brokkoly.resource
 
@@ -56,13 +57,38 @@ class Brokkoly:
         self.celery = celery.Celery(name, broker=broker)
         self._tasks = _tasks[name]
 
-    def task(self, *preprocessors: Callable) -> Callable:
-        def wrapper(f: Callable):
+    def task(
+            self, *preprocessors: Callable, retry_policy: Optional[brokkoly.retry.RetryPolicy]=None
+    ) -> Callable:
+        """Return a function for register a function as Celery task.
+
+        :param preprocessors: returning value of a preprocessor will be passed to the next
+        preprocessor, then all preprocessors are finished, the last result will be passed to
+        function f.
+        :param retry_policy: If it is not None, when an exception is raised by function f, it will
+        be retried based on this policy.
+        """
+        def wrapper(f: Callable) -> Callable:
+            """Register the function as Celery task.
+            """
             if f.__name__ in self._tasks:
-                raise BrokkolyError("{} is already registered".format(f.__name__))
+                raise BrokkolyError("{} is already registered.".format(f.__name__))
+
+            def handle(celery_task, *args, **kwargs) -> None:
+                try:
+                    return f(*args, **kwargs)
+                except Exception as e:
+                    if not retry_policy:
+                        raise e
+                    error = e
+                celery_task.retry(
+                    countdown=retry_policy.countdown(celery_task.request.retries, error),
+                    max_retries=retry_policy.max_retries,
+                    exc=error
+                )
 
             self._tasks[f.__name__] = (
-                Processor(self.celery.task(f), _prepare_validation(f)),
+                Processor(self.celery.task(handle, bind=True), _prepare_validation(f)),
                 [
                     Processor(
                         preprocessor,
