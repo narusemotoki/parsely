@@ -51,8 +51,13 @@ class BrokkolyError(Exception):
 
 
 def copy_function(function: Callable, name: str) -> Callable:
-    return types.FunctionType(
-        function.__code__, function.__globals__, name, function.__defaults__, function.__closure__)
+    return types.FunctionType(  # type: ignore
+        function.__code__,  # type: ignore
+        function.__globals__,  # type: ignore
+        name,
+        function.__defaults__,  # type: ignore
+        function.__closure__  # type: ignore
+    )
 
 
 class Brokkoly:
