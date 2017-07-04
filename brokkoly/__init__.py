@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sqlite3
+import types
 from typing import (
     Any,
     Callable,
@@ -32,7 +33,7 @@ __credits__ = ["Motoki Naruse"]
 __email__ = "motoki@naru.se"
 __license__ = "MIT"
 __maintainer__ = "Motoki Naruse"
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 Validation = List[Tuple[str, Any]]
@@ -47,6 +48,11 @@ logger = logging.getLogger(__name__)
 
 class BrokkolyError(Exception):
     pass
+
+
+def copy_function(function: Callable, name: str) -> Callable:
+    return types.FunctionType(
+        function.__code__, function.__globals__, name, function.__defaults__, function.__closure__)
 
 
 class Brokkoly:
@@ -87,13 +93,13 @@ class Brokkoly:
                     exc=error
                 )
 
+            # Copy handle and give a name because Celery uses the function name. If it is
+            # duplicated, can't control which handler will be called.
+            specialized_handle = copy_function(handle, f.__name__)
             self._tasks[f.__name__] = (
-                Processor(self.celery.task(handle, bind=True), _prepare_validation(f)),
+                Processor(self.celery.task(specialized_handle, bind=True), _prepare_validation(f)),
                 [
-                    Processor(
-                        preprocessor,
-                        _prepare_validation(preprocessor)
-                    )
+                    Processor(preprocessor, _prepare_validation(preprocessor))
                     for preprocessor in preprocessors
                 ]
             )

@@ -1,8 +1,9 @@
-Unreleased
-----------
+0.3.1 (2017/07/04)
+------------------
 
 * [Feature] Delay option
 * [Feature] Retry option
+* [Fix] Function names are duplicated in Celery.
 
 0.3.0 (2017/03/09)
 ------------------
