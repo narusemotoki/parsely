@@ -33,7 +33,7 @@ __credits__ = ["Motoki Naruse"]
 __email__ = "motoki@naru.se"
 __license__ = "MIT"
 __maintainer__ = "Motoki Naruse"
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 
 Validation = List[Tuple[str, Any]]
@@ -45,6 +45,9 @@ _tasks = collections.defaultdict(dict)  # type: collections.defaultdict
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+_logger_handler = logging.StreamHandler()
+_logger_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+logger.addHandler(_logger_handler)
 
 
 class ParselyError(Exception):
@@ -68,6 +71,7 @@ class Parsely:
             raise ParselyError("Queue name starting with _ is not allowed.")
         self.celery = celery.Celery(name, broker=broker)
         self._tasks = _tasks[name]
+        self._queue_name = name
 
     def task(
             self, *preprocessors: Callable, retry_policy: Optional[parsely.retry.RetryPolicy]=None
@@ -109,6 +113,7 @@ class Parsely:
                     for preprocessor in preprocessors
                 ]
             )
+            logger.info("Task %s is registered queue %s", f.__name__, self._queue_name)
             return f
         return wrapper
 
@@ -200,6 +205,8 @@ class Producer:
     ) -> None:
         (task, validation), preprocessors = self._validate_queue_and_task(queue_name, task_name)
         payload = self._validate_payload(req)
+
+        logger.info("Received message for Queue %s, Task %s, %s", queue_name, task_name, payload)
 
         try:
             message = payload['message']

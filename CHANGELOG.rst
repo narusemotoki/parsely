@@ -1,3 +1,11 @@
+0.6.1 (2017/09/14)
+------------------
+
+* [Feature] Set StreamHandler as default handler of the logger.
+* [Feature] Log task names.
+* [Feature] Log received message.
+
+
 0.6.0 (2017/09/14)
 ------------------
 

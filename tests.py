@@ -17,6 +17,9 @@ import parsely.retry
 celery.Celery = unittest.mock.MagicMock()
 parsely.database.db.dbname = 'test.db'
 
+# Disable logger
+parsely.logger.setLevel(logging.CRITICAL)
+
 
 def task_for_test(text: str, number: int):
     pass
@@ -232,7 +235,6 @@ class TestMigrator:
         migrator = parsely.database.Migrator(parsely.__version__)
         migrator._iter_diff = lambda x: [os.path.join("test_resources", "invalid.sql")]
 
-        parsely.database.logger.setLevel(logging.CRITICAL)
         with pytest.raises(parsely.ParselyError):
             migrator.migrate()
 
