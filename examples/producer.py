@@ -1,5 +1,5 @@
-import brokkoly
+import parsely
 
 import tasks  # NOQA
 
-application = brokkoly.producer()
+application = parsely.producer()

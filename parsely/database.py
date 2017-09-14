@@ -10,7 +10,7 @@ from typing import (  # NOQA
     Optional,
 )
 
-import brokkoly.resource
+import parsely.resource
 
 
 logger = logging.getLogger(__name__)
@@ -35,8 +35,8 @@ db = ThreadLocalDBConnectionManager()
 
 
 class Migrator:
-    def __init__(self, brokkoly_version: str) -> None:
-        self.brokkoly_version = brokkoly_version
+    def __init__(self, parsely_version: str) -> None:
+        self.parsely_version = parsely_version
 
     def _has_database(self):
         with contextlib.closing(db.get().cursor()) as cursor:
@@ -63,8 +63,8 @@ class Migrator:
     def _iter_diff(self, version: str) -> Iterator[str]:
         """Returning data must be sorted.
         """
-        logger.info("resource_dir: %s", brokkoly.resource.resource_dir)
-        migration_dir = os.path.join(brokkoly.resource.resource_dir, 'migrations')
+        logger.info("resource_dir: %s", parsely.resource.resource_dir)
+        migration_dir = os.path.join(parsely.resource.resource_dir, 'migrations')
         return (
             os.path.join(migration_dir, filename)
             for filename in sorted(os.listdir(migration_dir))
@@ -72,11 +72,11 @@ class Migrator:
         )
 
     def _raise_for_invalid_version(self, schema_version: str) -> None:
-        if schema_version > self.brokkoly_version:
-            raise brokkoly.BrokkolyError(
+        if schema_version > self.parsely_version:
+            raise parsely.ParselyError(
                 "Blokkory version: {}, Database schema version: {}. The database is setup with  "
-                "newer version of Brokkoly. It doesn't provide downgrade database. Please upgrade "
-                "Brokkoly.".format(self.brokkoly_version, schema_version)
+                "newer version of Parsely. It doesn't provide downgrade database. Please upgrade "
+                "Parsely.".format(self.parsely_version, schema_version)
             )
 
     def _run_migration_sql_file(self, filename: str) -> None:
@@ -88,7 +88,7 @@ class Migrator:
                 cursor.executescript(sql)
             except sqlite3.Error as e:
                 logger.exception("Failed to run migration: %s", filename)
-                raise brokkoly.BrokkolyError("Failed to run migration") from e
+                raise parsely.ParselyError("Failed to run migration") from e
 
     def _migrate(self) -> None:
         schema_version = self._get_migration_version() if self._has_database() else '0'

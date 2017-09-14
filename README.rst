@@ -1,13 +1,13 @@
-========
-Brokkoly
-========
+=======
+Parsely
+=======
 
-.. image:: https://travis-ci.org/narusemotoki/brokkoly.svg?branch=master
-    :target: https://travis-ci.org/narusemotoki/brokkoly
+.. image:: https://travis-ci.org/narusemotoki/parsely.svg?branch=master
+    :target: https://travis-ci.org/narusemotoki/parsely
 
-Brokkoly is a framework for enqueuing messages via HTTP request for celery.
+Parsely is a framework for enqueuing messages via HTTP request for celery.
 
-`CHANGELOG <https://github.com/narusemotoki/brokkoly/blob/master/CHANGELOG.rst>`_
+`CHANGELOG <https://github.com/narusemotoki/parsely/blob/master/CHANGELOG.rst>`_
 
 Example
 =======
@@ -17,10 +17,10 @@ tasks.py:
 
 .. code-block:: python
 
-   import brokkoly
+   import parsely
 
-   b = brokkoly.Brokkoly('example', 'redis://localhost:6379/0')
-   celery = b.celery
+   p = parsely.Parsely('example', 'redis://localhost:6379/0')
+   celery = p.celery
 
 
    def two_times(text: str) -> dict:
@@ -29,11 +29,11 @@ tasks.py:
        }
    
    
-   @b.task(two_times)
+   @p.task(two_times)
    def echo(text: str) -> None:
        print(text)
 
-:code:`two_times` works as pre processor. It works before enqueing. It means it can return BadRequest to your client. Brokkoly validate message with typehint. Also you can have extra validation and any other process here.
+:code:`two_times` works as pre processor. It works before enqueing. It means it can return BadRequest to your client. Parsely validate message with typehint. Also you can have extra validation and any other process here.
 
 Run :code:`celery -A tasks worker --loglevel=info`
 
@@ -42,11 +42,11 @@ producer.py:
 
 .. code-block:: python
 
-   import brokkoly
+   import parsely
 
    import tasks  # NOQA
 
-   application = brokkoly.producer()
+   application = parsely.producer()
 
 `producer` is WSGI application. You need to import your `tasks` for put message into queue.
 
@@ -72,7 +72,7 @@ preprocessor is optional. if you don't need it, you can:
 
 .. code-block:: python
 
-   @b.task()
+   @p.task()
    def echo(text: str) -> None:
        print(text)
 
@@ -80,6 +80,6 @@ Also you can give multiple preprocessor:
 
 .. code-block:: python
 
-   @b.task(two_times, two_times)
+   @p.task(two_times, two_times)
    def echo(text: str) -> None:
        print(text)

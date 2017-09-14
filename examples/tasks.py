@@ -1,7 +1,7 @@
-import brokkoly
+import parsely
 
-b = brokkoly.Brokkoly('example', 'redis://localhost:6379/0')
-celery = b.celery
+p = parsely.Parsely('example', 'redis://localhost:6379/0')
+celery = p.celery
 
 
 def two_times(text: str) -> dict:
@@ -10,6 +10,6 @@ def two_times(text: str) -> dict:
     }
 
 
-@b.task(two_times)
+@p.task(two_times)
 def echo(text: str) -> None:
     print(text)

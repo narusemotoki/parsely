@@ -21,19 +21,19 @@ import falcon.request
 import falcon.response
 import jinja2
 
-import brokkoly.retry
-import brokkoly.database
-import brokkoly.resource
+import parsely.retry
+import parsely.database
+import parsely.resource
 
 
-__all__ = ['BrokkolyError', 'Brokkoly', 'producer']
+__all__ = ['ParselyError', 'Parsely', 'producer']
 __author__ = "Motoki Naruse"
 __copyright__ = "Motoki Naruse"
 __credits__ = ["Motoki Naruse"]
 __email__ = "motoki@naru.se"
 __license__ = "MIT"
 __maintainer__ = "Motoki Naruse"
-__version__ = "0.3.1"
+__version__ = "0.5.0"
 
 
 Validation = List[Tuple[str, Any]]
@@ -46,7 +46,7 @@ _tasks = collections.defaultdict(dict)  # type: collections.defaultdict
 logger = logging.getLogger(__name__)
 
 
-class BrokkolyError(Exception):
+class ParselyError(Exception):
     pass
 
 
@@ -60,16 +60,16 @@ def copy_function(function: Callable, name: str) -> Callable:
     )
 
 
-class Brokkoly:
+class Parsely:
     def __init__(self, name: str, broker: str) -> None:
         if name.startswith('_'):
             # Because the names is reserved for control.
-            raise BrokkolyError("Queue name starting with _ is not allowed.")
+            raise ParselyError("Queue name starting with _ is not allowed.")
         self.celery = celery.Celery(name, broker=broker)
         self._tasks = _tasks[name]
 
     def task(
-            self, *preprocessors: Callable, retry_policy: Optional[brokkoly.retry.RetryPolicy]=None
+            self, *preprocessors: Callable, retry_policy: Optional[parsely.retry.RetryPolicy]=None
     ) -> Callable:
         """Return a function for register a function as Celery task.
 
@@ -83,7 +83,7 @@ class Brokkoly:
             """Register the function as Celery task.
             """
             if f.__name__ in self._tasks:
-                raise BrokkolyError("{} is already registered.".format(f.__name__))
+                raise ParselyError("{} is already registered.".format(f.__name__))
 
             def handle(celery_task, *args, **kwargs) -> None:
                 try:
@@ -210,8 +210,8 @@ class Producer:
             compression='zlib',
             countdown=payload.get('delay', 0)
         )
-        brokkoly.database.MessageLog.create(queue_name, task_name, json.dumps(message))
-        brokkoly.database.MessageLog.eliminate(queue_name, task_name)
+        parsely.database.MessageLog.create(queue_name, task_name, json.dumps(message))
+        parsely.database.MessageLog.eliminate(queue_name, task_name)
         resp.status = falcon.HTTP_202
         resp.body = "{}"
 
@@ -220,7 +220,7 @@ class Producer:
             task_name: str
     ) -> None:
         self._validate_queue_and_task(queue_name, task_name)
-        messages = brokkoly.database.MessageLog.list_by_queue_name_and_task_name(
+        messages = parsely.database.MessageLog.list_by_queue_name_and_task_name(
             queue_name, task_name)
 
         resp.content_type = 'text/html'
@@ -268,7 +268,7 @@ class QueueListResource:
 
 class StaticResource:
     def _read_resource(self, filename: str) -> bytes:
-        with open(brokkoly.resource.resource_filename(filename), 'rb') as f:
+        with open(parsely.resource.resource_filename(filename), 'rb') as f:
             return f.read()
 
     def on_get(
@@ -284,7 +284,7 @@ class StaticResource:
 
 class DBManager:
     def __init__(
-            self, connection_manager: brokkoly.database.ThreadLocalDBConnectionManager) -> None:
+            self, connection_manager: parsely.database.ThreadLocalDBConnectionManager) -> None:
         self.connection_manager = connection_manager
 
     def process_resource(
@@ -325,11 +325,11 @@ def init_logger(log_level: int) -> None:
 
 def producer(*, path: Optional[str]=None, log_level=logging.ERROR) -> falcon.api.API:
     init_logger(log_level)
-    brokkoly.database.db.dbname = "brokkoly.db"
+    parsely.database.db.dbname = "parsely.db"
 
-    brokkoly.database.Migrator(__version__).migrate()
+    parsely.database.Migrator(__version__).migrate()
 
-    application = falcon.API(middleware=[DBManager(brokkoly.database.db)])
+    application = falcon.API(middleware=[DBManager(parsely.database.db)])
     rendler = HTMLRendler()
     for controller, route in [
             (StaticResource(), "/__static__/{filename}"),

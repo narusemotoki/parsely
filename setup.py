@@ -10,7 +10,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 # Python 3.4 doesn't have typing module. So I cannot give typehint here.
 def get_meta():
-    with open(os.path.join(here, 'brokkoly/__init__.py')) as f:
+    with open(os.path.join(here, 'parsely/__init__.py')) as f:
         source = f.read()
 
     regex = r'^{}\s*=\s*[\'"]([^\'"]*)[\'"]'
@@ -42,9 +42,9 @@ test_requires = [
 ]
 
 setuptools.setup(
-    name='brokkoly',
+    name='parsely',
     version=get_meta('__version__'),
-    description="Brokkoly is a framework for enqueuing messages via HTTP request for celery.",
+    description="Parsely is a framework for enqueuing messages via HTTP request for Celery.",
     long_description=readme,
     classifiers=[
         "Development Status :: 1 - Planning",
@@ -60,9 +60,9 @@ setuptools.setup(
     keywords=["celery", "queue"],
     author=get_meta('__author__'),
     author_email=get_meta('__email__'),
-    url="https://github.com/narusemotoki/brokkoly",
+    url="https://github.com/narusemotoki/parsely",
     license=get_meta('__license__'),
-    packages=['brokkoly'],
+    packages=['parsely'],
     install_requires=install_requires,
     extras_require={
         'test': test_requires,
