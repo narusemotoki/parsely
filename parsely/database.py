@@ -13,7 +13,7 @@ from typing import (  # NOQA
 import parsely.resource
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('parsely')
 
 
 class ThreadLocalDBConnectionManager:
@@ -137,7 +137,7 @@ class MessageLog:
         return cls.get_by_id(id)
 
     @classmethod
-    def list_by_queue_name_and_task_name(
+    def iter_by_queue_name_and_task_name(
             cls, queue_name: str, task_name: str) -> Iterator['MessageLog']:
         with contextlib.closing(db.get().cursor()) as cursor:
             cursor.execute("""

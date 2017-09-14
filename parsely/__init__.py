@@ -33,7 +33,7 @@ __credits__ = ["Motoki Naruse"]
 __email__ = "motoki@naru.se"
 __license__ = "MIT"
 __maintainer__ = "Motoki Naruse"
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 
 Validation = List[Tuple[str, Any]]
@@ -44,6 +44,7 @@ _tasks = collections.defaultdict(dict)  # type: collections.defaultdict
 
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class ParselyError(Exception):
@@ -158,8 +159,9 @@ class HTMLRendler:
 
 
 class Producer:
-    def __init__(self, rendler: HTMLRendler) -> None:
+    def __init__(self, rendler: HTMLRendler, enable_database) -> None:
         self._rendler = rendler
+        self._enable_database = enable_database
 
     def _recurse(self, message: Message, preprocessors: List[Processor]) -> Message:
         if preprocessors:
@@ -210,8 +212,10 @@ class Producer:
             compression='zlib',
             countdown=payload.get('delay', 0)
         )
-        parsely.database.MessageLog.create(queue_name, task_name, json.dumps(message))
-        parsely.database.MessageLog.eliminate(queue_name, task_name)
+
+        if self._enable_database:
+            parsely.database.MessageLog.create(queue_name, task_name, json.dumps(message))
+            parsely.database.MessageLog.eliminate(queue_name, task_name)
         resp.status = falcon.HTTP_202
         resp.body = "{}"
 
@@ -220,8 +224,11 @@ class Producer:
             task_name: str
     ) -> None:
         self._validate_queue_and_task(queue_name, task_name)
-        messages = parsely.database.MessageLog.list_by_queue_name_and_task_name(
-            queue_name, task_name)
+        if self._enable_database:
+            messages = parsely.database.MessageLog.iter_by_queue_name_and_task_name(
+                queue_name, task_name)
+        else:
+            messages = iter([])
 
         resp.content_type = 'text/html'
         resp.body = self._rendler.render(
@@ -316,24 +323,28 @@ class DBManager:
             logger.debug("Failed to rollback or close SQLite3 connection.")
 
 
-def init_logger(log_level: int) -> None:
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s %(levelname)-5.5s [%(name)s:%(lineno)s] %(message)s"
-    )
+def producer(*, path: Optional[str]=None, enable_database=True) -> falcon.api.API:
+    """Create WSGI application for enqueing.
 
-
-def producer(*, path: Optional[str]=None, log_level=logging.ERROR) -> falcon.api.API:
-    init_logger(log_level)
+    :param path: You can give extra path. If it's None, an entry point is
+    "/{queue_name}/{task_name}". If it isn't None, an entry point is
+    "/{path}/{queue_name}/{task_name}"
+    :param enable_database: You can switch Parsely records messages into database or not.
+    :return: WSGI compatible object.
+    """
     parsely.database.db.dbname = "parsely.db"
 
-    parsely.database.Migrator(__version__).migrate()
+    if enable_database:
+        parsely.database.Migrator(__version__).migrate()
+        middlewares = [DBManager(parsely.database.db)]
+    else:
+        middlewares = []
 
-    application = falcon.API(middleware=[DBManager(parsely.database.db)])
+    application = falcon.API(middleware=middlewares)
     rendler = HTMLRendler()
     for controller, route in [
             (StaticResource(), "/__static__/{filename}"),
-            (Producer(rendler), "/{queue_name}/{task_name}"),
+            (Producer(rendler, enable_database), "/{queue_name}/{task_name}"),
             (QueueListResource(rendler), "/"),
             (TaskListResource(rendler), "/{queue_name}"),
     ]:

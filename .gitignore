@@ -93,3 +93,4 @@ ENV/
 # Project specialized
 *.db
 dev_*.py
+.mypy_cache/

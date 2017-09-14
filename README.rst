@@ -68,6 +68,9 @@ Send Test Message!
 Extra
 =====
 
+Preprocessor
+------------
+
 preprocessor is optional. if you don't need it, you can:
 
 .. code-block:: python
@@ -83,3 +86,17 @@ Also you can give multiple preprocessor:
    @p.task(two_times, two_times)
    def echo(text: str) -> None:
        print(text)
+
+
+logging
+-------
+
+Parsely uses logger witch named "parsely", so you can set log level like:
+
+.. code-block:: python
+
+   import logging
+
+
+   parsely_logger = logging.getLogger('parsely')
+   parsely_logger.setLevel(logging.DEBUG)
