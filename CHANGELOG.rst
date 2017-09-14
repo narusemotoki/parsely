@@ -1,3 +1,10 @@
+0.6.0 (2017/09/14)
+------------------
+
+* [Feature] Option to disable database logging.
+* [Feature] Remove log level option. Provide other way.
+
+
 0.5.0 (2017/09/14)
 ------------------
 

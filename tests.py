@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import pkg_resources
 import sqlite3
@@ -85,7 +86,7 @@ class TestProducer:
     def setup_method(self, method):
         self.parsely = parsely.Parsely('test_queue', 'test_broker')
         self.parsely.task()(task_for_test)
-        self.producer = parsely.Producer(parsely.HTMLRendler())
+        self.producer = parsely.Producer(parsely.HTMLRendler(), True)
         self.mock_req = unittest.mock.MagicMock()
         self.mock_resp = unittest.mock.MagicMock()
         parsely.database.Migrator(parsely.__version__).migrate()
@@ -231,6 +232,7 @@ class TestMigrator:
         migrator = parsely.database.Migrator(parsely.__version__)
         migrator._iter_diff = lambda x: [os.path.join("test_resources", "invalid.sql")]
 
+        parsely.database.logger.setLevel(logging.CRITICAL)
         with pytest.raises(parsely.ParselyError):
             migrator.migrate()
 
