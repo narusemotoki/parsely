@@ -9,7 +9,6 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Iterable,
     List,
     Optional,
     Tuple,
@@ -26,23 +25,20 @@ import parsely.database
 import parsely.resource
 
 
-__all__ = ['ParselyError', 'Parsely', 'producer']
+__all__ = ['ParselyError', 'Parsely']
 __author__ = "Motoki Naruse"
 __copyright__ = "Motoki Naruse"
 __credits__ = ["Motoki Naruse"]
 __email__ = "motoki@naru.se"
 __license__ = "MIT"
 __maintainer__ = "Motoki Naruse"
-__version__ = "0.6.1"
+__version__ = "0.7.0"
 
 
 Validation = List[Tuple[str, Any]]
 Processor = collections.namedtuple('Processor', ['func', 'validation'])
+Tasks = Dict[str, Tuple[Processor, List[Processor]]]
 Message = Dict[str, Any]
-
-_tasks = collections.defaultdict(dict)  # type: collections.defaultdict
-
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 _logger_handler = logging.StreamHandler()
@@ -70,7 +66,7 @@ class Parsely:
             # Because the names is reserved for control.
             raise ParselyError("Queue name starting with _ is not allowed.")
         self.celery = celery.Celery(name, broker=broker)
-        self._tasks = _tasks[name]
+        self._tasks = {}  # type: Tasks
         self._queue_name = name
 
     def task(
@@ -116,6 +112,45 @@ class Parsely:
             logger.info("Task %s is registered queue %s", f.__name__, self._queue_name)
             return f
         return wrapper
+
+    def make_producer(
+            self, *,
+            path: Optional[str]=None,
+            enable_database=True,
+            dbname: str="parsely.db"
+    ) -> falcon.api.API:
+        """Create WSGI application for enqueing.
+
+        :param path: You can give extra path. If it's None, an entry point is
+        "/{queue_name}/{task_name}". If it isn't None, an entry point is
+        "/{path}/{queue_name}/{task_name}"
+        :param enable_database: You can switch Parsely records messages into database or not.
+        :return: WSGI compatible object.
+        """
+        parsely.database.db.dbname = dbname
+
+        if enable_database:
+            parsely.database.Migrator(__version__).migrate()
+            middlewares = [DBManager(parsely.database.db)]
+        else:
+            middlewares = []
+
+        application = falcon.API(middleware=middlewares)
+        rendler = HTMLRendler()
+        for controller, route in [
+                (StaticResource(), "/__static__/{filename}"),
+                (
+                    Producer(rendler, enable_database, self._queue_name, self._tasks),
+                    "/{}/{{task_name}}".format(self._queue_name)
+                ),
+                (
+                    TaskListResource(rendler, self._queue_name, self._tasks),
+                    "/{}".format(self._queue_name)
+                ),
+        ]:
+            application.add_route("/{}{}".format(path, route) if path else route, controller)
+
+        return application
 
 
 def _prepare_validation(f: Callable) -> Validation:
@@ -164,28 +199,19 @@ class HTMLRendler:
 
 
 class Producer:
-    def __init__(self, rendler: HTMLRendler, enable_database) -> None:
+    def __init__(
+            self, rendler: HTMLRendler, enable_database: bool, queue_name: str, tasks: Tasks
+    ) -> None:
         self._rendler = rendler
         self._enable_database = enable_database
+        self._queue_name = queue_name
+        self._tasks = tasks
 
     def _recurse(self, message: Message, preprocessors: List[Processor]) -> Message:
         if preprocessors:
             (preprocess, preprocess_validation), *tail = preprocessors
             return self._recurse(preprocess(**_validate(message, preprocess_validation)), tail)
         return message
-
-    def _validate_queue_and_task(
-            self, queue_name: str, task_name: str) -> Tuple[Processor, List[Processor]]:
-        # _tasks is defaultdict, it deoesn't raise KeyError.
-        if queue_name not in _tasks:
-            raise falcon.HTTPBadRequest(
-                "Undefined queue", "{} is undefined queue".format(queue_name))
-        queue_tasks = _tasks[queue_name]
-
-        try:
-            return queue_tasks[task_name]
-        except KeyError:
-            raise falcon.HTTPBadRequest("Undefined task", "{} is undefined task".format(task_name))
 
     def _validate_payload(self, req: falcon.request.Request) -> Dict[str, Any]:
         payload = req.stream.read().decode()
@@ -200,13 +226,17 @@ class Producer:
             raise falcon.HTTPBadRequest("Payload is not a JSON", "The payload must be a JSON")
 
     def on_post(
-            self, req: falcon.request.Request, resp: falcon.response.Response, queue_name: str,
-            task_name: str
+            self, req: falcon.request.Request, resp: falcon.response.Response, task_name: str
     ) -> None:
-        (task, validation), preprocessors = self._validate_queue_and_task(queue_name, task_name)
+        try:
+            (task, validation), preprocessors = self._tasks[task_name]
+        except KeyError:
+            raise falcon.HTTPBadRequest("Undefined task", "{} is undefined task".format(task_name))
+
         payload = self._validate_payload(req)
 
-        logger.info("Received message for Queue %s, Task %s, %s", queue_name, task_name, payload)
+        logger.info(
+            "Received message for Queue %s, Task %s, %s", self._queue_name, task_name, payload)
 
         try:
             message = payload['message']
@@ -221,63 +251,36 @@ class Producer:
         )
 
         if self._enable_database:
-            parsely.database.MessageLog.create(queue_name, task_name, json.dumps(message))
-            parsely.database.MessageLog.eliminate(queue_name, task_name)
+            parsely.database.MessageLog.create(self._queue_name, task_name, json.dumps(message))
+            parsely.database.MessageLog.eliminate(self._queue_name, task_name)
         resp.status = falcon.HTTP_202
         resp.body = "{}"
 
     def on_get(
-            self, req: falcon.request.Request, resp: falcon.response.Response, queue_name: str,
-            task_name: str
+            self, req: falcon.request.Request, resp: falcon.response.Response, task_name: str
     ) -> None:
-        self._validate_queue_and_task(queue_name, task_name)
         if self._enable_database:
             messages = parsely.database.MessageLog.iter_by_queue_name_and_task_name(
-                queue_name, task_name)
+                self._queue_name, task_name)
         else:
             messages = iter([])
 
         resp.content_type = 'text/html'
         resp.body = self._rendler.render(
-            "enqueue.html", queue_name=queue_name, task_name=task_name, messages=messages)
+            "enqueue.html", queue_name=self._queue_name, task_name=task_name, messages=messages)
 
 
 class TaskListResource:
-    def __init__(self, rendler: HTMLRendler) -> None:
+    def __init__(self, rendler: HTMLRendler, queue_name: str, tasks: Tasks) -> None:
         self._rendler = rendler
+        self._queue_name = queue_name
+        self._tasks = tasks
 
-    def on_get(
-            self, req: falcon.request.Request, resp: falcon.response.Response, queue_name: str
-    ) -> None:
-        try:
-            task_names = self._list_task_name(queue_name)
-        except KeyError:
-            raise falcon.HTTPNotFound(
-                title="Undefined queue",
-                description="{} is undefined queue".format(queue_name)
-            )
-
+    def on_get(self, req: falcon.request.Request, resp: falcon.response.Response,) -> None:
+        task_names = self._tasks.keys()
         resp.content_type = 'text/html'
         resp.body = self._rendler.render(
-            "task_list.html", queue_name=queue_name, task_names=task_names)
-
-    def _list_task_name(self, queue_name: str) -> Iterable[str]:
-        # Check with "in" because _tasks is defaultdict.
-        if queue_name in _tasks:
-            return _tasks[queue_name].keys()
-        raise KeyError
-
-
-class QueueListResource:
-    def __init__(self, rendler: HTMLRendler) -> None:
-        self._rendler = rendler
-
-    def on_get(self, req: falcon.request.Request, resp: falcon.response.Response) -> None:
-        resp.content_type = 'text/html'
-        resp.body = self._rendler.render("queue_list.html", queue_names=self._list_queue_name())
-
-    def _list_queue_name(self) -> List[str]:
-        return sorted(_tasks.keys())
+            "task_list.html", queue_name=self._queue_name, task_names=task_names)
 
 
 class StaticResource:
@@ -328,33 +331,3 @@ class DBManager:
         except sqlite3.ProgrammingError:
             # With above reason, I think we don't need to report this one as exception.
             logger.debug("Failed to rollback or close SQLite3 connection.")
-
-
-def producer(*, path: Optional[str]=None, enable_database=True) -> falcon.api.API:
-    """Create WSGI application for enqueing.
-
-    :param path: You can give extra path. If it's None, an entry point is
-    "/{queue_name}/{task_name}". If it isn't None, an entry point is
-    "/{path}/{queue_name}/{task_name}"
-    :param enable_database: You can switch Parsely records messages into database or not.
-    :return: WSGI compatible object.
-    """
-    parsely.database.db.dbname = "parsely.db"
-
-    if enable_database:
-        parsely.database.Migrator(__version__).migrate()
-        middlewares = [DBManager(parsely.database.db)]
-    else:
-        middlewares = []
-
-    application = falcon.API(middleware=middlewares)
-    rendler = HTMLRendler()
-    for controller, route in [
-            (StaticResource(), "/__static__/{filename}"),
-            (Producer(rendler, enable_database), "/{queue_name}/{task_name}"),
-            (QueueListResource(rendler), "/"),
-            (TaskListResource(rendler), "/{queue_name}"),
-    ]:
-        application.add_route("/{}{}".format(path, route) if path else route, controller)
-
-    return application

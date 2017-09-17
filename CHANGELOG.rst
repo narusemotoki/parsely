@@ -1,3 +1,8 @@
+0.7.0 (Unreleased)
+------------------
+
+* [Feature] Reorganize structure. Public interface of producer is changed.
+
 0.6.1 (2017/09/14)
 ------------------
 
