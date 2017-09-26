@@ -22,7 +22,7 @@ tasks.py:
    import parsely
 
 
-   p = parsely.Parsely('example', 'redis://localhost:6379/0')
+   app = parsely.Parsely('example', 'redis://localhost:6379/0')
 
 
    def two_times(text: str) -> Dict[str, str]:
@@ -31,20 +31,20 @@ tasks.py:
        }
    
    
-   @p.task(two_times)
+   @app.task(two_times)
    def echo(text: str) -> None:
        print(text)
 
 
-   celery = p.celery
-   application = p.make_producer()
+   worker = p.celery
+   producer = p.make_producer()
 
 
 :code:`two_times` works as pre processor. It works before enqueing. It means it can return BadRequest to your client. Parsely validate message with typehint. Also you can have extra validation and any other process here.
 
 You can run `tasks.py` as Celery worker: :code:`celery -A tasks worker --loglevel=info`
 
-Also it runs as WSGI application. This is an example run it with uWSGI :code:`uwsgi --http :8080 --wsgi-file tasks.py --enable-threads --thunder-lock --master`
+Also it runs as WSGI application. This is an example run it with uWSGI :code:`uwsgi --http :8080 --wsgi-file tasks.py --callable producer --enable-threads --thunder-lock --master`
 
 Send Test Message!
 ------------------
@@ -69,7 +69,7 @@ preprocessor is optional. if you don't need it, you can:
 
 .. code-block:: python
 
-   @p.task()
+   @app.task()
    def echo(text: str) -> None:
        print(text)
 
@@ -77,7 +77,7 @@ Also you can give multiple preprocessor:
 
 .. code-block:: python
 
-   @p.task(two_times, two_times)
+   @app.task(two_times, two_times)
    def echo(text: str) -> None:
        print(text)
 

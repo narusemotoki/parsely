@@ -1,7 +1,8 @@
-0.7.0 (Unreleased)
+0.7.0 (2017/09/26)
 ------------------
 
 * [Feature] Reorganize structure. Public interface of producer is changed.
+* [Feature] SQLite3 isn't required.
 
 0.6.1 (2017/09/14)
 ------------------
